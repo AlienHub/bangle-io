@@ -9,22 +9,15 @@ import { useHistory, useLocation } from 'react-router-dom';
 
 import { Node } from '@bangle.dev/pm';
 
-import {
-  BaseFileSystemError,
-  NATIVE_BROWSER_PERMISSION_ERROR,
-  NATIVE_BROWSER_USER_ABORTED_ERROR,
-} from '@bangle.io/baby-fs';
+import { BaseFileSystemError } from '@bangle.io/baby-fs';
 import {
   ExtensionRegistry,
   useExtensionRegistryContext,
 } from '@bangle.io/extension-registry';
 import { removeMdExtension, shallowCompareArray } from '@bangle.io/utils';
 import {
-  FileOps,
   HELP_FS_INDEX_FILE_NAME,
   HELP_FS_WORKSPACE_NAME,
-  WORKSPACE_NOT_FOUND_ERROR,
-  WorkspaceError,
 } from '@bangle.io/workspaces';
 import {
   filePathToWsPath,
@@ -41,6 +34,7 @@ import {
   validateNoteWsPath,
 } from '@bangle.io/ws-path';
 
+import { useGetFileOps } from './use-get-file-ops';
 import { useRecentlyUsedWsPaths } from './use-recently-used-ws-paths';
 
 const LOG = false;
@@ -523,67 +517,4 @@ function usePushWsPath(
     [updateOpenedWsPaths],
   );
   return pushWsPath;
-}
-
-function handleErrors<T extends (...args: any[]) => any>(
-  cb: T,
-  onAuthNeeded: () => void,
-  onWorkspaceNotFound: () => void,
-) {
-  return (...args: Parameters<T>): ReturnType<T> => {
-    return cb(...args).catch((error) => {
-      if (
-        error instanceof BaseFileSystemError &&
-        (error.code === NATIVE_BROWSER_PERMISSION_ERROR ||
-          error.code === NATIVE_BROWSER_USER_ABORTED_ERROR)
-      ) {
-        onAuthNeeded();
-      }
-      if (
-        error instanceof WorkspaceError &&
-        error.code === WORKSPACE_NOT_FOUND_ERROR
-      ) {
-        onWorkspaceNotFound();
-      }
-      throw error;
-    });
-  };
-}
-
-/**
- * This whole thing exists so that we can tap into auth errors
- * and do the necessary.
- */
-function useGetFileOps(
-  onAuthError: () => void,
-  onWorkspaceNotFound: () => void,
-) {
-  const obj = useMemo(() => {
-    return {
-      renameFile: handleErrors(
-        FileOps.renameFile,
-        onAuthError,
-        onWorkspaceNotFound,
-      ),
-      deleteFile: handleErrors(
-        FileOps.deleteFile,
-        onAuthError,
-        onWorkspaceNotFound,
-      ),
-      getDoc: handleErrors(FileOps.getDoc, onAuthError, onWorkspaceNotFound),
-      saveDoc: handleErrors(FileOps.saveDoc, onAuthError, onWorkspaceNotFound),
-      listAllFiles: handleErrors(
-        FileOps.listAllFiles,
-        onAuthError,
-        onWorkspaceNotFound,
-      ),
-      checkFileExists: handleErrors(
-        FileOps.checkFileExists,
-        onAuthError,
-        onWorkspaceNotFound,
-      ),
-    };
-  }, [onAuthError, onWorkspaceNotFound]);
-
-  return obj;
 }
