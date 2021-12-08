@@ -19,7 +19,7 @@ export function useGetFileOps(
   onAuthError: () => void,
   onWorkspaceNotFound: () => void,
 ) {
-  const obj = useMemo(() => {
+  return useMemo(() => {
     return {
       renameFile: handleErrors(
         FileOps.renameFile,
@@ -45,8 +45,6 @@ export function useGetFileOps(
       ),
     };
   }, [onAuthError, onWorkspaceNotFound]);
-
-  return obj;
 }
 
 function handleErrors<T extends (...args: any[]) => any>(
