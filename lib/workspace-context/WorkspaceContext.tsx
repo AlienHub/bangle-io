@@ -188,8 +188,21 @@ export function WorkspaceContextProvider({
     location?.state?.workspaceStatus,
   ]);
 
+  // TODO fix this weird ness of openedWsPaths not reflecting the true state
+  let { primaryWsPath, secondaryWsPath } = openedWsPaths;
+  if (wsName === HELP_FS_WORKSPACE_NAME && !primaryWsPath) {
+    primaryWsPath = filePathToWsPath(wsName, HELP_FS_INDEX_FILE_NAME);
+  }
+  if (primaryWsPath && !isValidFileWsPath(primaryWsPath)) {
+    onInvalidPath(wsName, history, primaryWsPath);
+    primaryWsPath = undefined;
+  } else if (secondaryWsPath && !isValidFileWsPath(secondaryWsPath)) {
+    onInvalidPath(wsName, history, secondaryWsPath);
+    secondaryWsPath = undefined;
+  }
+  // END_WEIRDNESS
+
   const value: WorkspaceContextType = useMemo(() => {
-    const { primaryWsPath, secondaryWsPath } = openedWsPaths;
     return {
       checkFileExists: fileOps.checkFileExists,
       createNote,
@@ -208,6 +221,8 @@ export function WorkspaceContextProvider({
       wsName,
     };
   }, [
+    primaryWsPath,
+    secondaryWsPath,
     pushWsPath,
     getNote,
     createNote,
