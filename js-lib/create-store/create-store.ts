@@ -1,5 +1,5 @@
-type Listener<S> = (state: S) => void;
-
+export type Listener<S> = (state: S) => void;
+export type Dispatch<A> = (action: A) => void;
 // createStore exists to provider useReducer
 // type of api but at places where react cannot
 // exist -- worker, iframe etc.
@@ -15,7 +15,7 @@ export function createStore<S, I extends S, A>(
 
   const getState = () => state;
 
-  const dispatch = (action: A) => {
+  const dispatch: Dispatch<A> = (action: A) => {
     if (destroyed) {
       return;
     }

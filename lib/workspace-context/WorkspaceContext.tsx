@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import React, { useCallback, useContext, useEffect, useMemo } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 
 import { Node } from '@bangle.dev/pm';
@@ -14,7 +8,6 @@ import {
   ExtensionRegistry,
   useExtensionRegistryContext,
 } from '@bangle.io/extension-registry';
-import { removeMdExtension, shallowCompareArray } from '@bangle.io/utils';
 import {
   HELP_FS_INDEX_FILE_NAME,
   HELP_FS_WORKSPACE_NAME,
@@ -23,10 +16,8 @@ import {
   filePathToWsPath,
   getPrimaryWsPath,
   getSecondaryWsPath,
-  getWsName,
   History,
   isValidFileWsPath,
-  isValidNoteWsPath,
   Location,
   OpenedWsPaths,
   PathValidationError,
@@ -34,37 +25,45 @@ import {
   validateNoteWsPath,
 } from '@bangle.io/ws-path';
 
-import { useGetFileOps } from './use-get-file-ops';
+import { defaultDoc } from './default-doc';
+import { fileOpsPlus, FileOpsType } from './use-get-file-ops';
 import { useRecentlyUsedWsPaths } from './use-recently-used-ws-paths';
+import {
+  Selectors,
+  useWorkspaceStore,
+  WorkspaceDispatch,
+  WorkspaceStore,
+} from './WorkspaceStore';
 
-const LOG = false;
+const LOG = true;
 
 let log = LOG
   ? console.log.bind(console, 'WorkspaceContextProvider')
   : () => {};
 
-type RefreshWsPaths = ReturnType<typeof useFiles>['refreshWsPaths'];
+type UpdateOpenedWsPathsType = (
+  newOpened: OpenedWsPaths | ((currentOpened: OpenedWsPaths) => OpenedWsPaths),
+  options?: { replaceHistory?: boolean },
+) => Boolean;
 
 export interface WorkspaceContextType {
   wsName: string | undefined;
   // descending order (first most recent, last least recent)
   // wsPaths
   recentWsPaths: string[];
-  fileWsPaths: ReturnType<typeof useFiles>['fileWsPaths'];
-  noteWsPaths: ReturnType<typeof useFiles>['noteWsPaths'];
-  refreshWsPaths: RefreshWsPaths;
-  getNote: ReturnType<typeof useGetNote>;
-  createNote: ReturnType<typeof useCreateNote>;
-  deleteNote: ReturnType<typeof useDeleteNote>;
-  renameNote: ReturnType<typeof useRenameNote>;
+  fileWsPaths: WorkspaceStore['wsPaths'];
+  noteWsPaths: WorkspaceStore['wsPaths'];
+  refreshWsPaths: ReturnType<typeof Effects['refreshWsPaths']>;
+  getNote: ReturnType<typeof Effects['getNote']>;
+  createNote: ReturnType<typeof Effects['createNote']>;
+  deleteNote: ReturnType<typeof Effects['deleteNote']>;
+  renameNote: ReturnType<typeof Effects['renameNote']>;
   primaryWsPath: string | undefined;
   secondaryWsPath: string | undefined;
   openedWsPaths: OpenedWsPaths;
-  updateOpenedWsPaths: ReturnType<
-    typeof useOpenedWsPaths
-  >['updateOpenedWsPaths'];
-  pushWsPath: ReturnType<typeof usePushWsPath>;
-  checkFileExists: ReturnType<typeof useGetFileOps>['checkFileExists'];
+  updateOpenedWsPaths: UpdateOpenedWsPathsType;
+  pushWsPath: ReturnType<typeof Effects['pushWsPath']>;
+  checkFileExists: FileOpsType['checkFileExists'];
 }
 
 const WorkspaceHooksContext = React.createContext<WorkspaceContextType>(
@@ -98,10 +97,22 @@ export function WorkspaceContextProvider({
   onWorkspaceNotFound: (wsName: string | undefined, history: History) => void;
   onInvalidPath: OnInvalidPath;
 }) {
+  const [workspaceStore, storeDispatch] = useWorkspaceStore();
   const extensionRegistry = useExtensionRegistryContext();
   const history = useHistory();
-  const location = useLocation();
-  const wsName = useWsName(location);
+  const location = useLocation<any>();
+
+  const { wsName, openedWsPaths } = useMemo(
+    () => ({
+      wsName: Selectors.wsName(location),
+      openedWsPaths: Selectors.openedWsPaths(location),
+    }),
+    [location],
+  );
+  const noteWsPaths = useMemo(() => {
+    return Selectors.noteWsPaths(workspaceStore);
+  }, [workspaceStore]);
+
   const onAuthError = useCallback(() => {
     if (wsName) {
       onNativefsAuthError(wsName, history);
@@ -114,86 +125,86 @@ export function WorkspaceContextProvider({
     }
   }, [wsName, history, onWorkspaceNotFound]);
 
-  const fileOps = useGetFileOps(onAuthError, _onWorkspaceNoteFound);
-  const { openedWsPaths, updateOpenedWsPaths } = useOpenedWsPaths(
-    wsName,
-    history,
-    location,
-    onInvalidPath,
-  );
-  const { primaryWsPath, secondaryWsPath } = openedWsPaths;
-  const { fileWsPaths, noteWsPaths, refreshWsPaths } = useFiles(
-    wsName,
-    fileOps,
-  );
-  const createNote = useCreateNote(
-    wsName,
-    openedWsPaths,
-    refreshWsPaths,
-    history,
-    location,
-    fileOps,
+  useRecentlyUsedWsPaths(workspaceStore, storeDispatch, location);
+
+  const effects = useMemo(() => {
+    return Effects({
+      onAuthError,
+      onInvalidPath,
+      onWorkspaceNotFound: _onWorkspaceNoteFound,
+    });
+  }, [onAuthError, onInvalidPath, _onWorkspaceNoteFound]);
+
+  const fileOps = useMemo(() => {
+    return effects.getFileOps()();
+  }, [effects]);
+
+  const refreshWsPaths = useMemo(
+    () => effects.refreshWsPaths(storeDispatch, wsName, fileOps),
+    [storeDispatch, effects, wsName, fileOps],
   );
 
-  const deleteNote = useDeleteNote(
-    wsName,
-    openedWsPaths,
+  useEffect(() => {
+    storeDispatch({
+      type: '@UPDATE_WS_PATHS',
+      value: undefined,
+    });
+    // load the wsPaths on mount
+    refreshWsPaths();
+  }, [
+    storeDispatch,
     refreshWsPaths,
-    updateOpenedWsPaths,
-    fileOps,
-  );
-  const renameNote = useRenameNote(
     wsName,
-    openedWsPaths,
-    refreshWsPaths,
-    history,
-    location,
-    fileOps,
-  );
+    // when user grants permission to read file
+    location?.state?.workspaceStatus,
+  ]);
 
-  const getNote = useGetNote(extensionRegistry, fileOps);
-  const pushWsPath = usePushWsPath(updateOpenedWsPaths);
-  const recentWsPaths = useRecentlyUsedWsPaths(
-    wsName,
-    openedWsPaths,
-    noteWsPaths,
-  );
-
-  const checkFileExists = fileOps.checkFileExists;
   const value: WorkspaceContextType = useMemo(() => {
+    const { primaryWsPath, secondaryWsPath } = openedWsPaths;
+    const updateOpenedWsPaths = effects.updateOpenedWsPaths(location, history);
     return {
-      wsName,
-      recentWsPaths,
-      openedWsPaths,
-      fileWsPaths,
+      checkFileExists: fileOps.checkFileExists,
+      createNote: effects.createNote(
+        location,
+        fileOps,
+        refreshWsPaths,
+        history,
+      ),
+      deleteNote: effects.deleteNote(
+        location,
+        fileOps,
+        updateOpenedWsPaths,
+        refreshWsPaths,
+      ),
+      fileWsPaths: workspaceStore.wsPaths,
+      getNote: effects.getNote(extensionRegistry, fileOps),
       noteWsPaths,
-      refreshWsPaths,
-      getNote,
-      createNote,
-      deleteNote,
-      renameNote,
+      openedWsPaths,
       primaryWsPath,
+      pushWsPath: effects.pushWsPath(updateOpenedWsPaths),
+      recentWsPaths: workspaceStore.recentlyUsedWsPaths,
+      refreshWsPaths,
+      renameNote: effects.renameNote(
+        location,
+        fileOps,
+        history,
+        refreshWsPaths,
+      ),
       secondaryWsPath,
       updateOpenedWsPaths,
-      pushWsPath,
-      checkFileExists,
+      wsName,
     };
   }, [
+    effects,
+    extensionRegistry,
+    fileOps,
+    history,
+    location,
+    workspaceStore,
     wsName,
-    recentWsPaths,
     openedWsPaths,
-    primaryWsPath,
-    secondaryWsPath,
-    fileWsPaths,
     noteWsPaths,
     refreshWsPaths,
-    getNote,
-    createNote,
-    deleteNote,
-    renameNote,
-    updateOpenedWsPaths,
-    pushWsPath,
-    checkFileExists,
   ]);
 
   return (
@@ -203,286 +214,244 @@ export function WorkspaceContextProvider({
   );
 }
 
-function useWsName(location: Location) {
-  const wsName = getWsName(location);
-
-  return wsName;
-}
-
-export function useOpenedWsPaths(
-  wsName: string | undefined,
-  history: History,
-  location: Location,
-  onInvalidPath: OnInvalidPath,
-) {
-  let primaryWsPath = getPrimaryWsPath(location);
-  let secondaryWsPath = getSecondaryWsPath(location);
-
-  if (wsName === HELP_FS_WORKSPACE_NAME && !primaryWsPath) {
-    primaryWsPath = filePathToWsPath(wsName, HELP_FS_INDEX_FILE_NAME);
-  }
-
-  if (primaryWsPath && !isValidFileWsPath(primaryWsPath)) {
-    onInvalidPath(wsName, history, primaryWsPath);
-    primaryWsPath = undefined;
-  } else if (secondaryWsPath && !isValidFileWsPath(secondaryWsPath)) {
-    onInvalidPath(wsName, history, secondaryWsPath);
-    secondaryWsPath = undefined;
-  }
-
-  const openedWsPaths = useMemo(
-    () => new OpenedWsPaths([primaryWsPath, secondaryWsPath]),
-    [primaryWsPath, secondaryWsPath],
-  );
-
-  const updateOpenedWsPaths = useCallback(
-    (
-      newOpened:
-        | OpenedWsPaths
-        | ((currentOpened: OpenedWsPaths) => OpenedWsPaths),
-      { replaceHistory = false }: { replaceHistory?: boolean } = {},
-    ): boolean => {
-      if (!wsName) {
-        return false;
-      }
-      if (newOpened instanceof Function) {
-        newOpened = newOpened(openedWsPaths);
-      }
-
-      if (newOpened.equal(openedWsPaths)) {
-        return false;
-      }
-      const newLocation = newOpened.getLocation(location, wsName);
-
-      if (replaceHistory) {
-        historyReplace(history, newLocation);
-      } else {
-        historyPush(history, newLocation);
-      }
-      return true;
+export const Effects = ({
+  onAuthError,
+  onWorkspaceNotFound,
+  onInvalidPath,
+}: {
+  onAuthError: () => void;
+  onWorkspaceNotFound: () => void;
+  onInvalidPath: OnInvalidPath;
+}) => {
+  const _Effects = {
+    getFileOps: () => {
+      return () => fileOpsPlus(onAuthError, onWorkspaceNotFound);
     },
-    [wsName, history, openedWsPaths, location],
-  );
-
-  return { openedWsPaths, updateOpenedWsPaths };
-}
-
-export function useFiles(
-  wsName: string | undefined,
-  fileOps: ReturnType<typeof useGetFileOps>,
-) {
-  const location = useLocation<any>();
-
-  const [fileWsPaths, setFiles] = useState<undefined | string[]>(undefined);
-
-  const noteWsPaths = useMemo(() => {
-    return fileWsPaths?.filter((wsPath) => isValidNoteWsPath(wsPath));
-  }, [fileWsPaths]);
-  const refreshWsPaths = useCallback(() => {
-    if (!wsName) {
-      return;
-    }
-    log('refreshing wsPaths', wsName);
-    fileOps
-      .listAllFiles(wsName)
-      .then((items) => {
-        log('received files for wsName', wsName, 'file count', items.length);
-        setFiles((existing) => {
-          log('setting files', { existing, items, wsName });
-          if (!existing) {
-            return items;
-          }
-          // preserve the identity
-          const isEqual = shallowCompareArray(existing, items);
-          return isEqual ? existing : items;
-        });
-        return;
-      })
-      .catch((error) => {
-        setFiles(undefined);
-        // ignore file system error here as other parts of the
-        // application should have handled it
-        if (error instanceof BaseFileSystemError) {
-        } else {
-          throw error;
+    updateOpenedWsPaths: (
+      location: Location,
+      history: History,
+    ): UpdateOpenedWsPathsType => {
+      return (newOpened, { replaceHistory = false } = {}): boolean => {
+        const wsName = Selectors.wsName(location);
+        if (!wsName) {
+          return false;
         }
-      });
-  }, [wsName, fileOps]);
+        let primaryWsPath = getPrimaryWsPath(location);
+        let secondaryWsPath = getSecondaryWsPath(location);
 
-  useEffect(() => {
-    setFiles(undefined);
-    // load the wsPaths on mount
-    refreshWsPaths();
-  }, [
-    refreshWsPaths,
-    wsName,
-    // when user grants permission to read file
-    location.state?.workspaceStatus,
-  ]);
+        if (wsName === HELP_FS_WORKSPACE_NAME && !primaryWsPath) {
+          primaryWsPath = filePathToWsPath(wsName, HELP_FS_INDEX_FILE_NAME);
+        }
 
-  return { fileWsPaths, noteWsPaths, refreshWsPaths };
-}
+        if (primaryWsPath && !isValidFileWsPath(primaryWsPath)) {
+          onInvalidPath(wsName, history, primaryWsPath);
+          primaryWsPath = undefined;
+        } else if (secondaryWsPath && !isValidFileWsPath(secondaryWsPath)) {
+          onInvalidPath(wsName, history, secondaryWsPath);
+          secondaryWsPath = undefined;
+        }
 
-export function useRenameNote(
-  wsName: string | undefined,
-  openedWsPaths: OpenedWsPaths,
-  refreshWsPaths: RefreshWsPaths,
-  history: History,
-  location: Location,
-  fileOps: ReturnType<typeof useGetFileOps>,
-) {
-  return useCallback(
-    async (oldWsPath, newWsPath, { updateLocation = true } = {}) => {
-      if (!wsName) {
-        return;
-      }
+        const openedWsPaths = Selectors.openedWsPaths(location);
+        if (newOpened instanceof Function) {
+          newOpened = newOpened(openedWsPaths);
+        }
 
-      if (wsName === HELP_FS_WORKSPACE_NAME) {
-        throw new PathValidationError('Cannot rename a help document');
-      }
+        if (newOpened.equal(openedWsPaths)) {
+          return false;
+        }
+        const newLocation = newOpened.getLocation(location, wsName);
 
-      await fileOps.renameFile(oldWsPath, newWsPath);
-      if (updateLocation) {
-        const newLocation = openedWsPaths
-          .updateIfFound(oldWsPath, newWsPath)
-          .getLocation(location, wsName);
-
-        historyReplace(history, newLocation);
-      }
-
-      await refreshWsPaths();
+        if (replaceHistory) {
+          historyReplace(history, newLocation);
+        } else {
+          historyPush(history, newLocation);
+        }
+        return true;
+      };
     },
-    [fileOps, openedWsPaths, location, history, wsName, refreshWsPaths],
-  );
-}
 
-export function useGetNote(
-  extensionRegistry: ExtensionRegistry,
-  fileOps: ReturnType<typeof useGetFileOps>,
-) {
-  return useCallback(
-    async (wsPath: string) => {
-      const doc = await fileOps.getDoc(
-        wsPath,
-        extensionRegistry.specRegistry,
-        extensionRegistry.markdownItPlugins,
-      );
-      return doc;
-    },
-    [
-      fileOps,
-      extensionRegistry.specRegistry,
-      extensionRegistry.markdownItPlugins,
-    ],
-  );
-}
-
-export function useCreateNote(
-  wsName: string | undefined,
-  openedWsPaths: OpenedWsPaths,
-  refreshWsPaths: RefreshWsPaths,
-  history: History,
-  location: Location,
-  fileOps: ReturnType<typeof useGetFileOps>,
-) {
-  const createNoteCallback = useCallback(
-    async (
-      extensionRegistry,
-      wsPath,
-      {
-        open = true,
-        doc = Node.fromJSON(extensionRegistry.specRegistry.schema, {
-          type: 'doc',
-          content: [
-            {
-              type: 'heading',
-              attrs: {
-                level: 1,
-              },
-              content: [
-                {
-                  type: 'text',
-                  text: removeMdExtension(resolvePath(wsPath).fileName),
-                },
-              ],
-            },
-            {
-              type: 'paragraph',
-              content: [
-                {
-                  type: 'text',
-                  text: 'Hello world!',
-                },
-              ],
-            },
-          ],
-        }),
-      } = {},
+    refreshWsPaths: (
+      workspaceDispatch: WorkspaceDispatch,
+      wsName: string | undefined,
+      fileOps: FileOpsType,
     ) => {
-      if (!wsName) {
-        return;
-      }
-      const fileExists = await fileOps.checkFileExists(wsPath);
-      if (!fileExists) {
-        await fileOps.saveDoc(wsPath, doc, extensionRegistry.specRegistry);
-      }
-      await refreshWsPaths();
-      if (open) {
-        const newLocation = openedWsPaths
-          .updatePrimaryWsPath(wsPath)
-          .getLocation(location, wsName);
-
-        historyPush(history, newLocation);
-      }
+      return () => {
+        if (!wsName) {
+          return;
+        }
+        log('refreshing wsPaths', wsName);
+        fileOps
+          .listAllFiles(wsName)
+          .then((items) => {
+            log(
+              'received files for wsName',
+              wsName,
+              'file count',
+              items.length,
+            );
+            workspaceDispatch({
+              type: '@UPDATE_WS_PATHS',
+              value: items,
+            });
+            return;
+          })
+          .catch((error) => {
+            workspaceDispatch({
+              type: '@UPDATE_WS_PATHS',
+              value: undefined,
+            });
+            // ignore file system error here as other parts of the
+            // application should have handled it
+            if (error instanceof BaseFileSystemError) {
+            } else {
+              throw error;
+            }
+          });
+      };
     },
-    [refreshWsPaths, wsName, location, openedWsPaths, history, fileOps],
-  );
 
-  return createNoteCallback;
-}
+    renameNote: (
+      location: Location,
+      fileOps: FileOpsType,
+      history: History,
+      refreshWsPaths: () => void,
+    ) => {
+      return async (oldWsPath, newWsPath, { updateLocation = true } = {}) => {
+        const wsName = Selectors.wsName(location);
+        if (!wsName) {
+          return;
+        }
 
-export function useDeleteNote(
-  wsName: string | undefined,
-  openedWsPaths: OpenedWsPaths,
-  refreshWsPaths: RefreshWsPaths,
-  updateOpenedWsPaths: ReturnType<
-    typeof useOpenedWsPaths
-  >['updateOpenedWsPaths'],
-  fileOps: ReturnType<typeof useGetFileOps>,
-) {
-  return useCallback(
-    async (wsPathToDelete: Array<string> | string) => {
-      if (!wsName) {
-        return;
-      }
+        const openedWsPaths = Selectors.openedWsPaths(location);
 
-      if (wsName === HELP_FS_WORKSPACE_NAME) {
-        // TODO move this to a notification
-        throw new PathValidationError('Cannot delete a help document');
-      }
+        if (wsName === HELP_FS_WORKSPACE_NAME) {
+          throw new PathValidationError('Cannot rename a help document');
+        }
 
-      if (!Array.isArray(wsPathToDelete)) {
-        wsPathToDelete = [wsPathToDelete];
-      }
+        await fileOps.renameFile(oldWsPath, newWsPath);
+        if (updateLocation) {
+          const newLocation = openedWsPaths
+            .updateIfFound(oldWsPath, newWsPath)
+            .getLocation(location, wsName);
 
-      let newOpenedWsPaths = openedWsPaths;
+          historyReplace(history, newLocation);
+        }
 
-      wsPathToDelete.forEach((w) => {
-        validateNoteWsPath(w);
-        newOpenedWsPaths = newOpenedWsPaths.closeIfFound(w);
-      });
-
-      updateOpenedWsPaths(newOpenedWsPaths, { replaceHistory: true });
-
-      for (let wsPath of wsPathToDelete) {
-        await fileOps.deleteFile(wsPath);
-      }
-
-      await refreshWsPaths();
+        refreshWsPaths();
+      };
     },
-    [fileOps, wsName, refreshWsPaths, openedWsPaths, updateOpenedWsPaths],
-  );
-}
+
+    getNote: (extensionRegistry: ExtensionRegistry, fileOps: FileOpsType) => {
+      return async (wsPath: string) => {
+        const doc = await fileOps.getDoc(
+          wsPath,
+          extensionRegistry.specRegistry,
+          extensionRegistry.markdownItPlugins,
+        );
+        return doc;
+      };
+    },
+
+    createNote: (
+      location: Location,
+      fileOps: FileOpsType,
+      refreshWsPaths: () => void,
+      history: History,
+    ) => {
+      return async (
+        // TODO extension registry need not be provided
+        extensionRegistry,
+        wsPath,
+        {
+          open = true,
+          doc,
+        }: {
+          open?: Boolean;
+          doc?: Node;
+        } = {},
+      ) => {
+        const wsName = Selectors.wsName(location);
+        if (!wsName) {
+          return;
+        }
+        const openedWsPaths = Selectors.openedWsPaths(location);
+
+        if (doc == null) {
+          doc = defaultDoc(wsPath, extensionRegistry);
+        }
+
+        const fileExists = await fileOps.checkFileExists(wsPath);
+        if (!fileExists) {
+          await fileOps.saveDoc(wsPath, doc, extensionRegistry.specRegistry);
+        }
+        refreshWsPaths();
+        if (open) {
+          const newLocation = openedWsPaths
+            .updatePrimaryWsPath(wsPath)
+            .getLocation(location, wsName);
+
+          historyPush(history, newLocation);
+        }
+      };
+    },
+
+    deleteNote: (
+      location: Location,
+      fileOps: FileOpsType,
+      updateOpenedWsPaths: UpdateOpenedWsPathsType,
+      refreshWsPaths: () => void,
+    ) => {
+      return async (wsPathToDelete: Array<string> | string) => {
+        const wsName = Selectors.wsName(location);
+
+        if (!wsName) {
+          return;
+        }
+
+        if (wsName === HELP_FS_WORKSPACE_NAME) {
+          // TODO move this to a notification
+          throw new PathValidationError('Cannot delete a help document');
+        }
+
+        if (!Array.isArray(wsPathToDelete)) {
+          wsPathToDelete = [wsPathToDelete];
+        }
+
+        let newOpenedWsPaths = Selectors.openedWsPaths(location);
+
+        wsPathToDelete.forEach((w) => {
+          validateNoteWsPath(w);
+          newOpenedWsPaths = newOpenedWsPaths.closeIfFound(w);
+        });
+
+        updateOpenedWsPaths(newOpenedWsPaths, { replaceHistory: true });
+
+        for (let wsPath of wsPathToDelete) {
+          await fileOps.deleteFile(wsPath);
+        }
+
+        refreshWsPaths();
+      };
+    },
+
+    pushWsPath: (updateOpenedWsPaths: UpdateOpenedWsPathsType) => {
+      return (wsPath, newTab = false, secondary = false) => {
+        if (newTab) {
+          window.open(encodeURI(resolvePath(wsPath).locationPath));
+          return;
+        }
+        updateOpenedWsPaths((openedWsPath) => {
+          if (secondary) {
+            return openedWsPath.updateSecondaryWsPath(wsPath);
+          }
+          return openedWsPath.updatePrimaryWsPath(wsPath);
+        });
+      };
+    },
+  };
+
+  return _Effects;
+};
 
 function historyReplace(history, newLocation: Location) {
   if (history.location !== newLocation) {
@@ -494,27 +463,4 @@ function historyPush(history, newLocation: Location) {
   if (history.location !== newLocation) {
     history.push(newLocation);
   }
-}
-
-function usePushWsPath(
-  updateOpenedWsPaths: ReturnType<
-    typeof useOpenedWsPaths
-  >['updateOpenedWsPaths'],
-) {
-  const pushWsPath = useCallback(
-    (wsPath, newTab = false, secondary = false) => {
-      if (newTab) {
-        window.open(encodeURI(resolvePath(wsPath).locationPath));
-        return;
-      }
-      updateOpenedWsPaths((openedWsPath) => {
-        if (secondary) {
-          return openedWsPath.updateSecondaryWsPath(wsPath);
-        }
-        return openedWsPath.updatePrimaryWsPath(wsPath);
-      });
-    },
-    [updateOpenedWsPaths],
-  );
-  return pushWsPath;
 }

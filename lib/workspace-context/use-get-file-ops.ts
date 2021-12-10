@@ -15,36 +15,36 @@ import {
   WorkspaceError,
 } from '@bangle.io/workspaces';
 
-export function useGetFileOps(
+export type FileOpsType = ReturnType<typeof fileOpsPlus>;
+
+export function fileOpsPlus(
   onAuthError: () => void,
   onWorkspaceNotFound: () => void,
 ) {
-  return useMemo(() => {
-    return {
-      renameFile: handleErrors(
-        FileOps.renameFile,
-        onAuthError,
-        onWorkspaceNotFound,
-      ),
-      deleteFile: handleErrors(
-        FileOps.deleteFile,
-        onAuthError,
-        onWorkspaceNotFound,
-      ),
-      getDoc: handleErrors(FileOps.getDoc, onAuthError, onWorkspaceNotFound),
-      saveDoc: handleErrors(FileOps.saveDoc, onAuthError, onWorkspaceNotFound),
-      listAllFiles: handleErrors(
-        FileOps.listAllFiles,
-        onAuthError,
-        onWorkspaceNotFound,
-      ),
-      checkFileExists: handleErrors(
-        FileOps.checkFileExists,
-        onAuthError,
-        onWorkspaceNotFound,
-      ),
-    };
-  }, [onAuthError, onWorkspaceNotFound]);
+  return {
+    renameFile: handleErrors(
+      FileOps.renameFile,
+      onAuthError,
+      onWorkspaceNotFound,
+    ),
+    deleteFile: handleErrors(
+      FileOps.deleteFile,
+      onAuthError,
+      onWorkspaceNotFound,
+    ),
+    getDoc: handleErrors(FileOps.getDoc, onAuthError, onWorkspaceNotFound),
+    saveDoc: handleErrors(FileOps.saveDoc, onAuthError, onWorkspaceNotFound),
+    listAllFiles: handleErrors(
+      FileOps.listAllFiles,
+      onAuthError,
+      onWorkspaceNotFound,
+    ),
+    checkFileExists: handleErrors(
+      FileOps.checkFileExists,
+      onAuthError,
+      onWorkspaceNotFound,
+    ),
+  };
 }
 
 function handleErrors<T extends (...args: any[]) => any>(

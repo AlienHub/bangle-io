@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { createStore } from './create-store';
+import { createStore, Dispatch } from './create-store';
 
 // Instead of using useReducer, this exists to reuse
 // createStore.
@@ -8,7 +8,7 @@ export function useStore<S, I extends S, A>(
   rootReducer: (state: S, action: A) => S,
   initialArg: I,
   initialize?: (initArg: I) => S,
-) {
+): [S, Dispatch<A>] {
   const [store] = useState(() => {
     return createStore(rootReducer, initialArg, initialize);
   });
