@@ -139,10 +139,39 @@ export function WorkspaceContextProvider({
     return effects.getFileOps()();
   }, [effects]);
 
+  const updateOpenedWsPaths = useMemo(() => {
+    return effects.updateOpenedWsPaths(location, history);
+  }, [effects, location, history]);
+
+  const getNote = useMemo(() => {
+    return effects.getNote(extensionRegistry, fileOps);
+  }, [extensionRegistry, effects, fileOps]);
+
   const refreshWsPaths = useMemo(
     () => effects.refreshWsPaths(storeDispatch, wsName, fileOps),
     [storeDispatch, effects, wsName, fileOps],
   );
+
+  const renameNote = useMemo(() => {
+    return effects.renameNote(location, fileOps, history, refreshWsPaths);
+  }, [location, fileOps, history, refreshWsPaths, effects]);
+
+  const createNote = useMemo(() => {
+    return effects.createNote(location, fileOps, refreshWsPaths, history);
+  }, [effects, location, fileOps, refreshWsPaths, history]);
+
+  const pushWsPath = useMemo(() => {
+    return effects.pushWsPath(updateOpenedWsPaths);
+  }, [effects, updateOpenedWsPaths]);
+
+  const deleteNote = useMemo(() => {
+    return effects.deleteNote(
+      location,
+      fileOps,
+      updateOpenedWsPaths,
+      refreshWsPaths,
+    );
+  }, [effects, location, fileOps, updateOpenedWsPaths, refreshWsPaths]);
 
   useEffect(() => {
     storeDispatch({
@@ -161,50 +190,36 @@ export function WorkspaceContextProvider({
 
   const value: WorkspaceContextType = useMemo(() => {
     const { primaryWsPath, secondaryWsPath } = openedWsPaths;
-    const updateOpenedWsPaths = effects.updateOpenedWsPaths(location, history);
     return {
       checkFileExists: fileOps.checkFileExists,
-      createNote: effects.createNote(
-        location,
-        fileOps,
-        refreshWsPaths,
-        history,
-      ),
-      deleteNote: effects.deleteNote(
-        location,
-        fileOps,
-        updateOpenedWsPaths,
-        refreshWsPaths,
-      ),
+      createNote,
+      deleteNote,
       fileWsPaths: workspaceStore.wsPaths,
-      getNote: effects.getNote(extensionRegistry, fileOps),
+      getNote,
       noteWsPaths,
       openedWsPaths,
       primaryWsPath,
-      pushWsPath: effects.pushWsPath(updateOpenedWsPaths),
+      pushWsPath: pushWsPath,
       recentWsPaths: workspaceStore.recentlyUsedWsPaths,
       refreshWsPaths,
-      renameNote: effects.renameNote(
-        location,
-        fileOps,
-        history,
-        refreshWsPaths,
-      ),
+      renameNote,
       secondaryWsPath,
       updateOpenedWsPaths,
       wsName,
     };
   }, [
-    effects,
-    extensionRegistry,
+    pushWsPath,
+    getNote,
+    createNote,
     fileOps,
-    history,
-    location,
     workspaceStore,
     wsName,
     openedWsPaths,
     noteWsPaths,
+    renameNote,
     refreshWsPaths,
+    deleteNote,
+    updateOpenedWsPaths,
   ]);
 
   return (
