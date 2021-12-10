@@ -53,16 +53,16 @@ export interface WorkspaceContextType {
   recentWsPaths: string[];
   fileWsPaths: WorkspaceStore['wsPaths'];
   noteWsPaths: WorkspaceStore['wsPaths'];
-  refreshWsPaths: ReturnType<typeof Effects['refreshWsPaths']>;
-  getNote: ReturnType<typeof Effects['getNote']>;
-  createNote: ReturnType<typeof Effects['createNote']>;
-  deleteNote: ReturnType<typeof Effects['deleteNote']>;
-  renameNote: ReturnType<typeof Effects['renameNote']>;
+  refreshWsPaths: ReturnType<ReturnType<typeof Effects>['refreshWsPaths']>;
+  getNote: ReturnType<ReturnType<typeof Effects>['getNote']>;
+  createNote: ReturnType<ReturnType<typeof Effects>['createNote']>;
+  deleteNote: ReturnType<ReturnType<typeof Effects>['deleteNote']>;
+  renameNote: ReturnType<ReturnType<typeof Effects>['renameNote']>;
   primaryWsPath: string | undefined;
   secondaryWsPath: string | undefined;
   openedWsPaths: OpenedWsPaths;
   updateOpenedWsPaths: UpdateOpenedWsPathsType;
-  pushWsPath: ReturnType<typeof Effects['pushWsPath']>;
+  pushWsPath: ReturnType<ReturnType<typeof Effects>['pushWsPath']>;
   checkFileExists: FileOpsType['checkFileExists'];
 }
 
@@ -304,8 +304,8 @@ export const Effects = ({
       workspaceDispatch: WorkspaceDispatch,
       wsName: string | undefined,
       fileOps: FileOpsType,
-    ) => {
-      return () => {
+    ): (() => void) => {
+      return (): void => {
         if (!wsName) {
           return;
         }
