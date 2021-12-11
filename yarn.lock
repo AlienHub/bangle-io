@@ -2770,6 +2770,7 @@ __metadata:
   resolution: "@bangle.io/ui-context@workspace:lib/ui-context"
   dependencies:
     "@bangle.io/constants": "workspace:*"
+    "@bangle.io/create-store": "workspace:*"
     "@bangle.io/shared-types": "workspace:*"
     "@bangle.io/utils": "workspace:*"
     "@types/react": ^17.0.33
